@@ -1,4 +1,4 @@
-<?php declare(strict_types=1);
+<?php #declare(strict_types=1);
 
 /********************************************************
  *
@@ -12,15 +12,23 @@
  *
  ********************************************************/
 
-if (! ($argv[1] ?? false)) {
+ if (!isset($argv[1])) {
+    $argv[1] = false;
+}
+
+if (!isset($argv[2])) {
+    $argv[2] = false;
+}
+
+if (!$argv[1]) {
     echo 'Missing the first argument, check the file to see how to use it' . PHP_EOL;
     exit(1);
 }
-if (! ($argv[2] ?? false)) {
+if (!$argv[2]) {
     echo 'Missing the second argument, check the file to see how to use it' . PHP_EOL;
     exit(1);
 }
-[$_, $pathToCheck, $targetDirectory] = $argv;
+list($_, $pathToCheck, $targetDirectory) = $argv;
 
 // Create the target directory if it doesn't exist
 if (! is_dir($targetDirectory)) {
@@ -36,15 +44,15 @@ $librariesThatExistOnLambda = file(__DIR__ . "/libs-$arch.txt");
 $librariesThatExistOnLambda = array_map('trim', $librariesThatExistOnLambda);
 // For some reason some libraries are actually not in Lambda, despite being in the docker image 🤷
 $librariesThatExistOnLambda = array_filter($librariesThatExistOnLambda, function ($library) {
-    return ! str_contains($library, 'libgcrypt.so') && ! str_contains($library, 'libgpg-error.so');
+    return strpos($library, 'libgcrypt.so') === false && strpos($library, 'libgpg-error.so') === false;
 });
 
 $requiredLibraries = listDependencies($pathToCheck);
 // Exclude existing system libraries
-$requiredLibraries = array_filter($requiredLibraries, function (string $lib) use ($librariesThatExistOnLambda) {
+$requiredLibraries = array_filter($requiredLibraries, function ($lib) use ($librariesThatExistOnLambda) {
     // Libraries that we compiled are in /opt/lib or /opt/lib64, we compiled them because they are more
     // recent than the ones in Lambda so we definitely want to use them
-    $isALibraryWeCompiled = str_starts_with($lib, '/opt/lib');
+    $isALibraryWeCompiled = strpos($lib, '/opt/lib') === 0;
     $doesNotExistInLambda = !in_array(basename($lib), $librariesThatExistOnLambda, true);
     $keep = $isALibraryWeCompiled || $doesNotExistInLambda;
     if (! $keep) {
@@ -64,11 +72,12 @@ foreach ($requiredLibraries as $libraryPath) {
 }
 
 
-function listDependencies(string $path): array
+function listDependencies($path)
 {
     // ldd lists the dependencies of a binary or library/extension (.so file)
     exec("ldd $path 2>&1", $lines);
-    if (str_contains(end($lines), 'exited with unknown exit code (139)')) {
+    $lastLine = end($lines);
+    if (strpos($lastLine, 'exited with unknown exit code (139)') !== false) {
         // We can't use `ldd` on binaries (like /opt/bin/php) because it fails on cross-platform builds
         // so we fall back to `LD_TRACE_LOADED_OBJECTS` (which doesn't work for .so files, that's why we also try `ldd`)
         // See https://stackoverflow.com/a/35905007/245552
@@ -80,7 +89,7 @@ function listDependencies(string $path): array
     }
     $dependencies = [];
     foreach ($lines as $line) {
-        if (str_ends_with($line, ' => not found')) {
+        if (substr($line, -11) === ' => not found') {
             throw new RuntimeException("This library is a dependency for $path but cannot be found by 'ldd':\n$line\n");
         }
         $matches = [];
